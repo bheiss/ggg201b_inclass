@@ -1,0 +1,96 @@
+#Download MegaHit
+git clone https://github.com/voutcn/megahit.git
+cd megahit
+make -j 4
+
+#Download E. coli reads
+mkdir ~/work
+cd ~/work
+
+curl -O -L https://s3.amazonaws.com/public.ged.msu.edu/ecoli_ref-5m.fastq.gz
+
+#Install khmer
+cd
+pip install khmer==2.0
+
+
+gunzip -c ecoli_ref-5m.fastq.gz | head -400000 | \
+    split-paired-reads.py -1 top.R1.fq -2 top.R2.fq
+
+head top.R1.fq	
+#There are zero sequences to split, therefore, there is no file... 	
+
+#Redo??
+cd ~/work
+
+curl -O -L https://s3.amazonaws.com/public.ged.msu.edu/ecoli_ref-5m.fastq.gz
+gunzip -c ecoli_ref-5m.fastq.gz | head
+#Something is definitely there!
+
+gunzip -c ecoli_ref-5m.fastq.gz | head -400000 | \
+    split-paired-reads.py -1 top.R1.fq -2 top.R2.fq
+	
+	head top.R1.fq
+	#Looks like it worked
+	
+#Install Trimmomatic
+sudo apt-get -y install trimmomatic
+#Download Adapters
+wget https://anonscm.debian.org/cgit/debian-med/trimmomatic.git/plain/adapters/TruSeq3-PE.fa
+
+#Run Trimmomatic
+TrimmomaticPE top.R1.fq top.R2.fq out-r1 orphan1 out-r2 orphan2 ILLUMINACLIP:TruSeq3-PE.fa:2:40:15 LEADING:2 TRA
+ILING:2 SLIDINGWINDOW:4:2 MINLEN:25
+
+#Interleave
+interleave-reads.py top.R1.fq top.R2.fq > top-pe.fq
+
+#Run MegaHit
+~/megahit/megahit --12 top-pe.fq -o ecoli
+
+#Save
+cp ecoli/final.contigs.fa ecoli-assembly.fa
+
+#Examine
+head ecoli-assembly.fa
+
+#Install QUAST
+cd ~/
+git clone https://github.com/ablab/quast.git -b release_4.2
+export PYTHONPATH=$(pwd)/quast/libs/
+
+#Run QUAST
+cd ~/work
+~/quast/quast.py ecoli-assembly.fa -o ecoli_report
+
+python2.7 ~/quast/quast.py ecoli-assembly.fa -o ecoli_report
+
+#QUAST Report
+All statistics are based on contigs of size >= 500 bp, unless otherwise noted (e.g., "# contigs (>= 0 bp)" and "Total length (>= 0 bp)" include all contigs).
+
+Assembly                    ecoli-assembly
+# contigs (>= 0 bp)         2753          
+# contigs (>= 1000 bp)      68            
+# contigs (>= 5000 bp)      1             
+# contigs (>= 10000 bp)     0             
+# contigs (>= 25000 bp)     0             
+# contigs (>= 50000 bp)     0             
+Total length (>= 0 bp)      1323689       
+Total length (>= 1000 bp)   90531         
+Total length (>= 5000 bp)   6488          
+Total length (>= 10000 bp)  0             
+Total length (>= 25000 bp)  0             
+Total length (>= 50000 bp)  0             
+# contigs                   877           
+Largest contig              6488          
+Total length                609588        
+GC (%)                      49.09         
+N50                         663           
+N75                         568           
+L50                         342           
+L75                         591           
+# N's per 100 kbp           0.00  
+
+#Comments
+I believe that the significant increase in short contigs is due to the trimming creating much smaller reads that failed to overlap as well.
+This also increased the number of contigs about 8 fold. The lack of overlapping reads --> lack of overlapping contigs --> more contigs --> much smaller "largest contig" --> lower N50
