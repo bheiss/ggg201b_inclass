@@ -1,0 +1,122 @@
+#Install EdgeR
+ cd
+ git clone https://github.com/ctb/2017-ucdavis-igg201b.git
+
+ sudo Rscript --no-save ~/2017-ucdavis-igg201b/lab7/install-edgeR.R
+ 
+ #Install Salmon
+  cd
+ curl -L -O https://github.com/COMBINE-lab/salmon/releases/download/v0.8.0/Salmon-0.8.0_linux_x86_64.tar.gz
+ tar xzf Salmon-0.8.0_linux_x86_64.tar.gz
+ export PATH=$PATH:$HOME/Salmon-latest_linux_x86_64/bin
+ 
+ #Make a Yeast Directory
+  mkdir yeast
+ cd yeast 
+ 
+ #Download Yeast data sets
+ curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR458/ERR458500/ERR458500.fastq.gz
+ curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR458/ERR458501/ERR458501.fastq.gz
+ curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR458/ERR458502/ERR458502.fastq.gz
+curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR458/ERR458503/ERR458503.fastq.gz
+curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR458/ERR458504/ERR458504.fastq.gz
+
+ curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR458/ERR458493/ERR458493.fastq.gz
+ curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR458/ERR458494/ERR458494.fastq.gz
+ curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR458/ERR458495/ERR458495.fastq.gz
+curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR458/ERR458496/ERR458496.fastq.gz
+curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR458/ERR458497/ERR458497.fastq.gz
+
+#Download the yeast reference transcriptome
+ curl -O http://downloads.yeastgenome.org/sequence/S288C_reference/orf_dna/orf_coding.fasta.gz
+ 
+ #Index reference transcriptome
+  salmon index --index yeast_orfs --type quasi --transcripts orf_coding.fasta.gz
+  
+  #Run Salmon 
+   for i in *.fastq.gz
+ do
+     salmon quant -i yeast_orfs --libType U -r $i -o $i.quant --seqBias --gcBias
+ done
+ 
+ #Gather Counts
+  curl -L -O https://github.com/ngs-docs/2016-aug-nonmodel-rnaseq/raw/master/files/gather-counts.py
+ python2 gather-counts.py
+ 
+ #Run EdgeR with additional samples
+ Rscript --no-save ~/2017-ucdavis-igg201b/lab8/yeast.salmon.R
+ 
+ ### My edited yeast.Salmon.R file posted on my github
+ library("edgeR")
+
+files <- c(
+"ERR458493.fastq.gz.quant.counts",
+"ERR458494.fastq.gz.quant.counts",
+"ERR458495.fastq.gz.quant.counts",
+"ERR458496.fastq.gz.quant.counts",
+"ERR458497.fastq.gz.quant.counts",
+"ERR458500.fastq.gz.quant.counts",
+"ERR458501.fastq.gz.quant.counts",
+"ERR458502.fastq.gz.quant.counts",
+"ERR458503.fastq.gz.quant.counts",
+"ERR458504.fastq.gz.quant.counts"
+)
+
+labels=c("wtA", "wtB", "wtC", "wtD", "wtE", "mutA", "mutB", "mutC", "mutD", "mutE")
+
+data <- readDGE(files)
+
+print(data)
+
+###
+
+group <- c(rep("mut", 5), rep("wt", 5))
+
+dge = DGEList(counts=data, group=group)
+dge <- estimateCommonDisp(dge)
+dge <- estimateTagwiseDisp(dge)
+
+# make an MA-plot
+
+et <- exactTest(dge, pair=c("wt", "mut"))
+etp <- topTags(et, n=100000)
+etp$table$logFC = -etp$table$logFC
+pdf("yeast-edgeR-MA-plot.pdf")
+plot(
+  etp$table$logCPM,
+  etp$table$logFC,
+  xlim=c(-3, 20), ylim=c(-12, 12), pch=20, cex=.3,
+  col = ifelse( etp$table$FDR < .2, "red", "black" ) )
+dev.off()
+
+# plot MDS
+pdf("yeast-edgeR-MDS.pdf")
+plotMDS(dge, labels=labels)
+dev.off()
+
+# output CSV for 0-6 hr
+write.csv(etp$table, "yeast-edgeR.csv")
+
+#git clone my github
+cd
+git clone https://github.com/bheiss/ggg201b_inclass.git
+
+#Run R analysis
+cd yeast
+Rscript --no-save home/ubuntu/ggg201b_inclass/yeast.salmon.R
+
+#Examine MDS and MDA for grouping
+##Note I may have switched the mut and wt labels. Whoops!
+
+#Have a long conversation with Kirk about how to assess differential expression and ask how to do it. All credit to Kirk A.
+awk 'BEGIN {FS = ","} ; {if ($5 <= 0.05) print $0}' ./yeast-edgeR.csv | grep -cv ",\"FDR"
+#4458
+
+#Lab 8 differential expression
+awk 'BEGIN {FS = ","} ; {if ($5 <= 0.05) print $0}' ~/2017-ucdavis-igg201b/lab8/yeast-edgeR.csv | grep -cv ",\"FDR"
+#4030
+
+#Conclusion: Adding the two additional wild type (ERR458497 and ERR458496) and mutant (ERR458504 and ERR458503) resulted in 428 more differentially expressed genes 
+ 
+
+
